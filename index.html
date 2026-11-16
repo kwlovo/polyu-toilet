@@ -71,11 +71,25 @@ select,input[type=text],input[type=email],input[type=password],textarea{backgrou
 .pend{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;border-top:1px solid var(--line);padding-top:8px;font-size:.88rem}
 .pend .what{flex:1 1 180px;min-width:0;overflow-wrap:anywhere}
 .pend button{font-size:.8rem;padding:4px 10px}
-.clist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:40vh;overflow-y:auto}
-.clist li{overflow-wrap:anywhere}
-.clist .who{font-weight:600;font-size:.88rem}
-.clist time{font-size:.72rem;color:var(--muted);margin-left:6px}
-.clist .edit{float:right}
+dialog.sheet{margin:auto auto 0;width:min(560px,100%);max-width:100%;max-height:85dvh;border-radius:16px 16px 0 0;border-bottom:0;overflow:hidden}
+dialog.sheet[open]{display:flex;flex-direction:column}
+.chead{display:flex;align-items:center;gap:8px;padding:14px 8px 10px 16px;border-bottom:1px solid var(--line)}
+.chead h2{margin:0;font-size:1.05rem;flex:1}
+.chead small{font-weight:400;color:var(--muted);margin-left:6px}
+.chead .edit{font-size:1.1rem;color:var(--muted);padding:4px 10px}
+.clist{list-style:none;margin:0;padding:14px 16px;display:flex;flex-direction:column;gap:16px;flex:1;min-height:140px;overflow-y:auto}
+.clist li{display:grid;grid-template-columns:36px 1fr auto;gap:0 10px;align-items:start}
+.clist li.note{display:block;text-align:center;padding:28px 0}
+.av{width:36px;height:36px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.cm{min-width:0;overflow-wrap:anywhere}
+.cm .who{font-weight:600;font-size:.85rem}
+.cm time{font-size:.75rem;color:var(--muted);margin-left:8px}
+.cm p{margin:2px 0 0;white-space:pre-wrap}
+.cform{gap:8px;padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface)}
+.cform input,.cform textarea{background:var(--bg)}
+#cName{width:12em;max-width:100%;padding:6px 10px}
+.crow{display:flex;gap:8px;align-items:flex-end}
+.crow textarea{flex:1;resize:none}
 .empty{border:1px dashed var(--line);border-radius:8px;padding:18px 14px;text-align:center;color:var(--muted)}
 .empty strong{display:block;color:var(--fg);margin-bottom:4px}
 .foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.75rem;color:var(--muted)}
@@ -164,14 +178,13 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   </form>
 </dialog>
 
-<dialog id="cdlg">
-  <form id="cForm">
-    <h2 id="cTitle">評論</h2>
-    <ul class="clist" id="cList"></ul>
-    <label class="field">暱稱<input type="text" id="cName" maxlength="20" required placeholder="大家會看到這個名字"></label>
-    <label class="field">評論<textarea id="cBody" rows="2" maxlength="300" required placeholder="所有人都看得到，請不要寫個人資料"></textarea></label>
-    <div class="actions">
-      <button class="btn" id="cClose" type="button">關閉</button>
+<dialog id="cdlg" class="sheet">
+  <div class="chead"><h2 id="cTitle">評論</h2><button class="edit" id="cClose" type="button" aria-label="關閉">✕</button></div>
+  <ul class="clist" id="cList"></ul>
+  <form id="cForm" class="cform">
+    <input type="text" id="cName" maxlength="20" required placeholder="你的暱稱" aria-label="暱稱">
+    <div class="crow">
+      <textarea id="cBody" rows="1" maxlength="300" required placeholder="寫下評論，所有人都看得到" aria-label="評論"></textarea>
       <button class="btn primary" type="submit">送出</button>
     </div>
   </form>
@@ -496,10 +509,16 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   };
 
   // ---- Comments (cloud only)
-  var cFor=null;
+  var cFor=null, cHead="";
+  function ago(iso){
+    var m=Math.floor((Date.now()-new Date(iso).getTime())/60000);
+    if (m<1) return "剛剛"; if (m<60) return m+" 分鐘前"; if (m<1440) return Math.floor(m/60)+" 小時前"; if (m<43200) return Math.floor(m/1440)+" 天前";
+    return new Date(iso).toLocaleDateString("zh-HK",{year:"numeric",month:"numeric",day:"numeric"});
+  }
+  function hue(s){ var h=0; for (var i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))%360; return h; }
   function openComments(id){
     var t=rec(id); if (!t) return;
-    cFor=id; $("cTitle").textContent=t.place+" "+t.floor+"/F 的評論"; $("cName").value=ls("wc.name")||""; $("cBody").value="";
+    cFor=id; cHead=t.place+" "+t.floor+"/F 評論"; $("cTitle").textContent=cHead; $("cName").value=ls("wc.name")||""; $("cBody").value="";
     $("cList").innerHTML='<li class="note">載入中…</li>';
     if (!$("cdlg").open) $("cdlg").showModal();
     loadComments();
@@ -509,10 +528,12 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
     api("comments?toilet_id=eq."+encodeURIComponent(id)+"&select=id,name,body,created_at&order=created_at.desc&limit=200").then(function(cs){
       if (cFor!==id) return;
       ccount[id]=cs.length;
+      $("cTitle").innerHTML=esc(cHead)+(cs.length?'<small>'+cs.length+' 則</small>':'');
       $("cList").innerHTML=cs.length?cs.map(function(c){
-        var when=new Date(c.created_at).toLocaleString("zh-HK",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
-        return '<li>'+(admin?'<button type="button" class="edit" data-cdel="'+esc(c.id)+'">刪除</button>':'')+
-          '<span class="who">'+esc(c.name)+'</span><time>'+esc(when)+'</time><div>'+esc(c.body)+'</div></li>';
+        var nm=String(c.name).trim();
+        return '<li><span class="av" style="background:hsl('+hue(nm)+' 42% 42%)" aria-hidden="true">'+esc(Array.from(nm)[0]||"?")+'</span>'+
+          '<div class="cm"><span class="who">'+esc(nm)+'</span><time>'+esc(ago(c.created_at))+'</time><p>'+esc(c.body)+'</p></div>'+
+          (admin?'<button type="button" class="edit" data-cdel="'+esc(c.id)+'">刪除</button>':'')+'</li>';
       }).join(""):'<li class="note">還沒有評論，來寫第一則。</li>';
       render();
     },function(){ $("cList").innerHTML='<li class="note">載入不到評論。</li>'; });
