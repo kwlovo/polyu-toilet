@@ -78,9 +78,11 @@ dialog.sheet[open]{display:flex;flex-direction:column}
 .chead small{font-weight:400;color:var(--muted);margin-left:6px}
 .chead .edit{font-size:1.1rem;color:var(--muted);padding:4px 10px}
 .clist{list-style:none;margin:0;padding:14px 16px;display:flex;flex-direction:column;gap:16px;flex:1;min-height:140px;overflow-y:auto}
-.clist li{display:grid;grid-template-columns:36px 1fr auto;gap:0 10px;align-items:start}
+.clist li{display:grid;grid-template-columns:32px 1fr auto;gap:0 10px;align-items:start}
 .clist li.note{display:block;text-align:center;padding:28px 0}
-.av{width:36px;height:36px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.av{width:32px;height:32px;margin-top:2px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.85rem;
+  background:hsl(var(--h) 55% 90%);color:hsl(var(--h) 45% 32%)}
+@media (prefers-color-scheme: dark){ .av{background:hsl(var(--h) 28% 26%);color:hsl(var(--h) 55% 82%)} }
 .cm{min-width:0;overflow-wrap:anywhere}
 .cm .who{font-weight:600;font-size:.85rem}
 .cm time{font-size:.75rem;color:var(--muted);margin-left:8px}
@@ -531,7 +533,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
       $("cTitle").innerHTML=esc(cHead)+(cs.length?'<small>'+cs.length+' 則</small>':'');
       $("cList").innerHTML=cs.length?cs.map(function(c){
         var nm=String(c.name).trim();
-        return '<li><span class="av" style="background:hsl('+hue(nm)+' 42% 42%)" aria-hidden="true">'+esc(Array.from(nm)[0]||"?")+'</span>'+
+        return '<li><span class="av" style="--h:'+hue(nm)+'" aria-hidden="true">'+esc(Array.from(nm)[0]||"?")+'</span>'+
           '<div class="cm"><span class="who">'+esc(nm)+'</span><time>'+esc(ago(c.created_at))+'</time><p>'+esc(c.body)+'</p></div>'+
           (admin?'<button type="button" class="edit" data-cdel="'+esc(c.id)+'">刪除</button>':'')+'</li>';
       }).join(""):'<li class="note">還沒有評論，來寫第一則。</li>';
