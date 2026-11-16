@@ -46,6 +46,7 @@ create table public.comments (
   name       text not null check (char_length(btrim(name)) between 1 and 20),
   body       text not null check (char_length(btrim(body)) between 1 and 300),
   avatar     text check (avatar is null or char_length(avatar) <= 8),
+  by_admin   boolean not null default false,
   created_at timestamptz not null default now()
 );
 create index comments_toilet on public.comments (toilet_id, created_at desc);
@@ -61,6 +62,8 @@ create policy "admin deletes comments" on public.comments for delete
 create function public.brake() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
+  -- Only the database decides whether a comment is the admin's.
+  if tg_table_name = 'comments' then new.by_admin := public.is_admin(); end if;
   if public.is_admin() then return new; end if;
   new.created_at := now();
   if tg_table_name = 'toilets' then
