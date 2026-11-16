@@ -108,6 +108,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
     <span id="count"></span>
     <button class="btn" id="exportBtn" type="button">匯出備份</button>
     <button class="btn" id="importBtn" type="button">匯入備份</button>
+    <button class="btn" id="shareBtn" type="button">匯出給同學</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
   </div>
 </div>
@@ -177,7 +178,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
     return Math.sqrt(dLat*dLat+dLng*dLng)*R;
   }
 
-  var toilets={}, notes={}, pos=null, myFloor="", filt={place:"",acc:false,paper:false,quiet:false,m:false,f:false};
+  var toilets={}, shared={}, notes={}, pos=null, myFloor="", filt={place:"",acc:false,paper:false,quiet:false,m:false,f:false};
   var editing=null, armed=false;
   var $=function(id){return document.getElementById(id);};
   function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
@@ -234,7 +235,12 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   $("locate").onclick=function(){ if(pos) map.setView(pos.ll,Math.max(map.getZoom(),18)); else { $("geo").textContent="正在取得位置…"; startGeo(); } };
 
   // ---- Rendering
-  function all(){ return Object.keys(toilets).map(function(id){return toilets[id];}); }
+  // Shared records come from data.json in the site; this device's own records win when both have the same id.
+  function rec(id){ return toilets[id]||shared[id]; }
+  function all(){
+    var ids={}; Object.keys(shared).forEach(function(id){ids[id]=1;}); Object.keys(toilets).forEach(function(id){ids[id]=1;});
+    return Object.keys(ids).map(rec);
+  }
   function score(t){
     var d=pos&&BY[t.place]?metres(pos.ll,BY[t.place].ll):0;
     return d+(myFloor?floorGap(myFloor,t.floor)*15:0);
@@ -290,7 +296,8 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
           '<button type="button" class="edit" data-edit="'+esc(t.id)+'">編輯</button></li>';
       }).join("");
     }
-    $("count").textContent="共 "+total+" 筆，存在這部裝置";
+    var mine=Object.keys(toilets).length;
+    $("count").textContent="共 "+total+" 筆"+(mine?"，其中 "+mine+" 筆存在這部裝置":"");
   }
 
   // ---- Form
@@ -302,13 +309,13 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   }
   function openForm(id,preset){
     editing=id||null; armed=false;
-    var t=id?toilets[id]:(preset||{place:filt.place||nearestPlace(),floor:myFloor||"G",gender:"both",paper:"unknown",crowd:"unknown"}), n=(id&&notes[id])||{};
+    var t=id?rec(id):(preset||{place:filt.place||nearestPlace(),floor:myFloor||"G",gender:"both",paper:"unknown",crowd:"unknown"}), n=(id&&notes[id])||{};
     $("formTitle").textContent=id?"編輯 "+t.place+" "+t.floor+"/F":"新增廁所";
     $("fPlace").value=t.place; $("fFloor").value=t.floor; $("fWhere").value=t.where||"";
     $("fGender").value=t.gender||"both"; $("fPaper").value=t.paper||"unknown"; $("fCrowd").value=t.crowd||"unknown";
     $("fAccessible").checked=!!t.accessible; $("fRating").value=String(n.rating||0); $("fNote").value=n.note||"";
     $("againWrap").hidden=!!id; if (id) $("fAgain").checked=false;
-    $("delBtn").hidden=!id; $("delBtn").textContent="刪除";
+    $("delBtn").hidden=!id||!toilets[id]; $("delBtn").textContent="刪除";
     if (!$("dlg").open) $("dlg").showModal();
   }
   function save(){
@@ -344,10 +351,19 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   $("floor").onchange=function(){ myFloor=$("floor").value; ls("wc.floor",myFloor); render(); };
 
   // ---- Backup
-  $("exportBtn").onclick=function(){
-    var blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),toilets:toilets,notes:notes},null,2)],{type:"application/json"});
-    var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="polyu-toilets-"+new Date().toISOString().slice(0,10)+".json";
+  function download(name,obj){
+    var blob=new Blob([JSON.stringify(obj,null,2)],{type:"application/json"});
+    var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+  }
+  $("exportBtn").onclick=function(){
+    download("polyu-toilets-"+new Date().toISOString().slice(0,10)+".json",{version:1,exportedAt:new Date().toISOString(),toilets:toilets,notes:notes});
+  };
+  // The shared file leaves out ratings and notes on purpose.
+  $("shareBtn").onclick=function(){
+    var out={}; all().forEach(function(t){ out[t.id]=t; });
+    download("data.json",{version:1,exportedAt:new Date().toISOString(),toilets:out});
+    toast("已下載 data.json，不含你的評分和筆記。");
   };
   $("importBtn").onclick=function(){ $("importFile").click(); };
   $("importFile").onchange=function(){
@@ -371,6 +387,11 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   toilets=ls("wc.toilets")||{}; notes=ls("wc.notes")||{};
   var sf=ls("wc.floor"); if (sf&&FLOORS.indexOf(sf)>=0){ myFloor=sf; $("floor").value=sf; }
   render(); startGeo();
+  fetch("data.json",{cache:"no-store"}).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+    if (!d||typeof d.toilets!=="object") return;
+    Object.keys(d.toilets).forEach(function(id){ var t=d.toilets[id]; if(t&&BY[t.place]&&FLOORS.indexOf(t.floor)>=0){ t.id=id; shared[id]=t; } });
+    render();
+  }).catch(function(){});
 })();
 </script>
 </body>
