@@ -91,3 +91,15 @@ grant select, insert on public.toilets, public.comments to anon, authenticated;
 grant update, delete on public.toilets to authenticated;
 grant delete on public.comments to authenticated;
 grant execute on function public.is_admin(), public.my_status(text[]) to anon, authenticated;
+
+-- One row of site-wide settings: the admin's photo. Everyone reads it, only the admin changes it.
+create table public.site (
+  id          int primary key check (id = 1),
+  boss_avatar text check (boss_avatar is null or char_length(boss_avatar) <= 40000)
+);
+alter table public.site enable row level security;
+create policy "anyone reads site" on public.site for select using (true);
+create policy "admin adds site" on public.site for insert with check (public.is_admin());
+create policy "admin changes site" on public.site for update using (public.is_admin()) with check (public.is_admin());
+grant select on public.site to anon, authenticated;
+grant insert, update on public.site to authenticated;

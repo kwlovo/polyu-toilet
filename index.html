@@ -90,6 +90,7 @@ dialog.sheet[open]{display:flex;flex-direction:column}
 .cform{gap:8px;padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface)}
 .cform input,.cform textarea{background:var(--bg)}
 .av.emoji{font-size:1.15rem}
+.av img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
 .av.boss{background:#fff1b8;color:#7a5200;box-shadow:0 0 0 2px #d4a017}
 .badge{font-size:.68rem;font-weight:600;background:#d4a017;color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:1px}
 #cMe{border:0;background:none;padding:0 0 4px;cursor:pointer}
@@ -206,6 +207,13 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
     <h2>你的暱稱和頭像</h2>
     <label class="field">暱稱<input type="text" id="pName" maxlength="20" required placeholder="留言時大家會看到這個名字"></label>
     <div class="field">頭像（可以不選）<div class="emo" id="pEmo"></div></div>
+    <div class="field" id="pBoss" hidden>站長照片（只用在你登入後留的評論，所有人都看得到）
+      <div class="row">
+        <button class="btn" type="button" id="pPhoto">從相簿選照片</button>
+        <button class="btn" type="button" id="pNoPhoto">不用照片</button>
+      </div>
+      <input type="file" id="pFile" accept="image/*" hidden>
+    </div>
     <div class="actions">
       <button class="btn" id="pClose" type="button">取消</button>
       <button class="btn primary" type="submit">儲存</button>
@@ -309,6 +317,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
       render();
       var mine=Object.keys(toilets);
       return Promise.all([
+        api("site?id=eq.1&select=boss_avatar").then(function(r){ bossImg=r&&r[0]&&okImg(r[0].boss_avatar)?r[0].boss_avatar:""; },function(){}),
         api("comments?select=toilet_id").then(function(cs){ ccount={}; cs.forEach(function(c){ ccount[c.toilet_id]=(ccount[c.toilet_id]||0)+1; }); }),
         mine.length?api("rpc/my_status",{method:"POST",body:{ids:mine}}).then(function(st){ status={}; st.forEach(function(s){ status[s.id]=s.status; }); statusKnown=true; }):(statusKnown=true),
         admin?api("toilets?status=eq.pending&select=*&order=created_at").then(function(p){ pending=p; }):(pending=[])
@@ -543,7 +552,29 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   var EMO=["🐶","🐱","🐼","🐨","🦊","🐸","🐧","🐥","🦄","🐙","🐳","🦉","🍙","🍜","🧋","🍉","🍕","☕","🌸","🌙","⭐","🔥","🧻","🚽","💩"], pPick="", pThen=null;
   function me(){ return {name:ls("wc.name")||"",avatar:ls("wc.avatar")||""}; }
   // "boss" marks the admin's comments. The database sets that flag itself, so nobody else can claim it.
+  // The admin's photo is shrunk to 96px on the device and kept in the database as a small JPEG.
+  var bossImg="";
+  function okImg(s){ return typeof s==="string"&&s.length<40000&&/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(s); }
+  function setBoss(url){
+    api("site?on_conflict=id",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:{id:1,boss_avatar:url||null}}).then(function(){
+      bossImg=url||""; showMe(); if ($("cdlg").open) loadComments(); toast(url?"照片已設定。":"已改回不用照片。");
+    },function(){ toast("沒有成功，資料庫可能還沒更新。"); });
+  }
+  $("pPhoto").onclick=function(){ $("pFile").click(); };
+  $("pNoPhoto").onclick=function(){ setBoss(""); };
+  $("pFile").onchange=function(){
+    var f=this.files[0]; this.value=""; if (!f) return;
+    var img=new Image(), u=URL.createObjectURL(f);
+    img.onload=function(){
+      var w=img.naturalWidth, h=img.naturalHeight, s=Math.min(w,h), c=document.createElement("canvas"); c.width=c.height=96;
+      c.getContext("2d").drawImage(img,(w-s)/2,(h-s)/2,s,s,0,0,96,96); URL.revokeObjectURL(u);
+      setBoss(c.toDataURL("image/jpeg",.82));
+    };
+    img.onerror=function(){ URL.revokeObjectURL(u); toast("這張圖片讀不到，換一張試試。"); };
+    img.src=u;
+  };
   function avHtml(name,avatar,boss){
+    if (boss&&bossImg) return '<span class="av boss" aria-hidden="true"><img src="'+bossImg+'" alt=""></span>';
     var e=EMO.indexOf(avatar)>=0; if (boss&&!e){ avatar="👑"; e=true; }
     return '<span class="av'+(e?" emoji":"")+(boss?" boss":"")+'" style="--h:'+hue(name)+'" aria-hidden="true">'+(e?avatar:esc(Array.from(name)[0]||"?"))+'</span>';
   }
@@ -557,7 +588,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
     }).join("");
   }
   function openProfile(then){
-    var m=me(); pThen=then||null; pPick=m.avatar; $("pName").value=m.name; drawEmo(); $("pdlg").showModal();
+    var m=me(); pThen=then||null; pPick=m.avatar; $("pName").value=m.name; $("pBoss").hidden=!admin; drawEmo(); $("pdlg").showModal();
   }
   $("pEmo").addEventListener("click",function(e){ var b=e.target.closest("[data-e]"); if(!b) return; pPick=b.dataset.e; drawEmo(); });
   $("pForm").addEventListener("submit",function(e){
