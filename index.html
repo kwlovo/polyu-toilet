@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>理大廁所圖</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{
+  --bg:#f3f1f0; --surface:#ffffff; --fg:#211c1c; --muted:#6d6464; --line:#ddd7d6;
+  --brick:#9c2f2a; --brick-soft:#f1dedb; --on-brick:#ffffff; --ok:#2f6b4a; --warn:#96650f; --me:#2f7fe0;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Consolas,monospace;
+  --sans:"PingFang HK","PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#191616; --surface:#242020; --fg:#efe9e8; --muted:#a59b9a; --line:#3a3433;
+    --brick:#e07a70; --brick-soft:#40221f; --on-brick:#1a0f0e; --ok:#7cc79b; --warn:#e0b25a; color-scheme:dark; }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.5;
+  display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+[hidden]{display:none!important}
+button,select,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--brick);outline-offset:2px}
+header{display:flex;align-items:center;gap:8px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top,0px));
+  background:var(--surface);border-bottom:1px solid var(--line)}
+h1{font-size:1.1rem;margin:0;flex:1;white-space:nowrap}
+select,input[type=text],textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 14px;cursor:pointer}
+.btn.primary{background:var(--brick);color:var(--on-brick);border-color:var(--brick);font-weight:600}
+.btn.danger{color:var(--brick);border-color:var(--brick)}
+.mapwrap{position:relative;flex:1 1 55%;min-height:40%}
+#map{position:absolute;inset:0;background:#f2f2f0}
+.outside{filter:grayscale(1) contrast(.6) brightness(1.18);opacity:.75}
+#legend{position:absolute;left:10px;top:10px;z-index:500;background:rgba(255,255,255,.92);border-radius:999px;padding:3px 10px;
+  font-size:.75rem;color:#3a3433;display:flex;align-items:center;gap:6px}
+#legend i{width:12px;height:12px;border-radius:50%;background:#1f8a5b;border:2px solid #fff;box-shadow:0 0 0 1px #1f8a5b}
+#locate{position:absolute;right:10px;bottom:22px;z-index:500;width:44px;height:44px;border-radius:50%;
+  border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:1.2rem;color:var(--me)}
+#geo{position:absolute;left:10px;bottom:22px;z-index:500;background:var(--surface);border:1px solid var(--line);
+  border-radius:999px;padding:3px 10px;font-size:.75rem;color:var(--muted);max-width:calc(100% - 80px)}
+.mk{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border:2px solid #fff;
+  background:#b5654a;color:#fff;font:700 12px var(--mono);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.mk.has{background:#1f8a5b;color:#fff;border-color:#fff}
+.mk.sel{outline:3px solid #211c1c;outline-offset:1px}
+.medot{width:16px;height:16px;border-radius:50%;background:var(--me);border:3px solid #fff}
+.panel{flex:0 1 45%;overflow-y:auto;background:var(--bg);border-top:1px solid var(--line);
+  padding:10px 12px calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 11px;font-size:.82rem;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chip.place{background:var(--brick);color:var(--on-brick);border-color:var(--brick)}
+.list{display:flex;flex-direction:column;gap:6px;list-style:none;margin:0;padding:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+  display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:start}
+.loc{font-family:var(--mono);font-weight:700;font-size:1.1rem;white-space:nowrap}
+.loc small{display:block;font-family:var(--sans);font-weight:400;font-size:.72rem;color:var(--me)}
+.body{min-width:0;display:flex;flex-direction:column;gap:4px}
+.where,.note{overflow-wrap:anywhere}
+.note{font-size:.88rem;color:var(--muted)}
+.tags{display:flex;flex-wrap:wrap;gap:4px}
+.tag{font-size:.72rem;border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--muted)}
+.tag.ok{color:var(--ok);border-color:var(--ok)}
+.tag.warn{color:var(--warn);border-color:var(--warn)}
+.stars{color:var(--brick);letter-spacing:.1em;font-size:.9rem}
+.edit{border:0;background:none;color:var(--brick);cursor:pointer;padding:4px;font-size:.85rem}
+.empty{border:1px dashed var(--line);border-radius:8px;padding:18px 14px;text-align:center;color:var(--muted)}
+.empty strong{display:block;color:var(--fg);margin-bottom:4px}
+.foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.75rem;color:var(--muted)}
+.foot button{font-size:.75rem;padding:4px 10px}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);padding:0;
+  width:min(520px,calc(100% - 24px));max-height:calc(100% - 24px)}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+form{display:flex;flex-direction:column;gap:12px;padding:16px}
+form h2{margin:0;font-size:1.1rem}
+fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;min-width:0}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:4px;flex:1 1 120px;min-width:0;font-size:.85rem;color:var(--muted)}
+.field select,.field input,.field textarea{color:var(--fg);font-size:1rem;width:100%}
+.check{display:flex;align-items:center;gap:8px}
+.check input{width:20px;height:20px;accent-color:var(--brick)}
+.sep{border-top:1px solid var(--line);padding-top:10px;font-size:.78rem;color:var(--muted)}
+.actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.actions .danger{margin-right:auto}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:2000;
+  background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:.9rem;max-width:calc(100% - 32px)}
+</style>
+</head>
+<body>
+<header>
+  <h1>理大廁所圖</h1>
+  <select id="floor" aria-label="我在幾樓"></select>
+  <button class="btn primary" id="addBtn" type="button">＋ 新增</button>
+</header>
+
+<div class="mapwrap">
+  <div id="map"></div>
+  <div id="legend"><i></i>這層有廁所</div>
+  <div id="geo">正在取得位置…</div>
+  <button id="locate" type="button" aria-label="回到我的位置" title="回到我的位置">◎</button>
+</div>
+
+<div class="panel">
+  <div class="chips" id="chips"></div>
+  <ul class="list" id="list"></ul>
+  <div class="foot">
+    <span id="count"></span>
+    <button class="btn" id="exportBtn" type="button">匯出備份</button>
+    <button class="btn" id="importBtn" type="button">匯入備份</button>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <form id="form">
+    <h2 id="formTitle">新增廁所</h2>
+    <fieldset>
+      <div class="row">
+        <label class="field">位置<select id="fPlace" required></select></label>
+        <label class="field">樓層<select id="fFloor" required></select></label>
+      </div>
+      <label class="field">位置描述（可不填）<input type="text" id="fWhere" maxlength="80" placeholder="例如：近升降機大堂"></label>
+      <div class="row">
+        <label class="field">類型<select id="fGender">
+          <option value="both">男女皆有</option><option value="m">只有男廁</option>
+          <option value="f">只有女廁</option><option value="all">性別友善</option></select></label>
+        <label class="field">廁紙<select id="fPaper">
+          <option value="unknown">未知</option><option value="yes">通常有</option>
+          <option value="sometimes">不一定</option><option value="no">通常沒有</option></select></label>
+        <label class="field">人流<select id="fCrowd">
+          <option value="unknown">未知</option><option value="low">人少</option>
+          <option value="mid">普通</option><option value="high">人多</option></select></label>
+      </div>
+      <label class="check"><input type="checkbox" id="fAccessible">有無障礙廁所</label>
+    </fieldset>
+    <div class="sep">你的評分和筆記（匯出給別人時可以不包含）</div>
+    <fieldset>
+      <label class="field">評分<select id="fRating">
+        <option value="0">未評分</option><option value="5">★★★★★ 首選</option><option value="4">★★★★ 不錯</option>
+        <option value="3">★★★ 可以</option><option value="2">★★ 勉強</option><option value="1">★ 避開</option></select></label>
+      <label class="field">筆記<textarea id="fNote" rows="2" maxlength="300" placeholder="例如：午飯後要排隊"></textarea></label>
+    </fieldset>
+    <label class="check" id="againWrap"><input type="checkbox" id="fAgain">儲存後繼續加同一位置的另一層</label>
+    <div class="actions">
+      <button class="btn danger" id="delBtn" type="button" hidden>刪除</button>
+      <button class="btn" id="cancelBtn" type="button">取消</button>
+      <button class="btn primary" type="submit">儲存</button>
+    </div>
+  </form>
+</dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="campus.js"></script>
+<script>
+(function(){
+  // Cores are the round stair-and-lift towers where the toilets sit; buildings are the stand-alone blocks.
+  // Coordinates are OpenStreetMap building centres.
+  var PLACES=[
+    {id:"A",t:"core",ll:[22.30298,114.17828]},{id:"B",t:"core",ll:[22.30268,114.17847]},{id:"C",t:"core",ll:[22.30274,114.17894]},
+    {id:"D",t:"core",ll:[22.30261,114.17944]},{id:"E",t:"core",ll:[22.30307,114.17958]},{id:"F",t:"core",ll:[22.30320,114.17908]},
+    {id:"G",t:"core",ll:[22.30333,114.17857]},{id:"H",t:"core",ll:[22.30381,114.17871]},{id:"J",t:"core",ll:[22.30367,114.17921]},
+    {id:"P",t:"core",ll:[22.30396,114.18051]},{id:"Q",t:"core",ll:[22.30443,114.18065]},{id:"S",t:"core",ll:[22.30503,114.18028]},
+    {id:"T",t:"core",ll:[22.30490,114.18079]},{id:"U",t:"core",ll:[22.30537,114.18093]},
+    {id:"R",t:"bld",ll:[22.30452,114.18004]},{id:"L",t:"bld",ll:[22.30341,114.17997]},{id:"M",t:"bld",ll:[22.30403,114.17971]},
+    {id:"N",t:"bld",ll:[22.30426,114.18024]},{id:"V",t:"bld",ll:[22.30523,114.17944]},
+    {id:"VA",t:"bld",ll:[22.30454,114.17918]},{id:"VS",t:"bld",ll:[22.30424,114.17866]},{id:"W",t:"bld",ll:[22.30556,114.18071]},
+    {id:"X",t:"bld",ll:[22.30555,114.18003]},{id:"Y",t:"bld",ll:[22.30587,114.18079]},{id:"Z",t:"bld",ll:[22.30667,114.17940]}
+  ];
+  var BY={}; PLACES.forEach(function(p){BY[p.id]=p;});
+  var ORDER=PLACES.map(function(p){return p.id;});
+  var FLOORS=["B","G","P"]; for (var i=1;i<=20;i++) FLOORS.push(String(i));
+  function floorGap(a,b){ return Math.abs(FLOORS.indexOf(a)-FLOORS.indexOf(b)); }
+  function metres(a,b){
+    var R=6371000,r=Math.PI/180,dLat=(b[0]-a[0])*r,dLng=(b[1]-a[1])*r*Math.cos(a[0]*r);
+    return Math.sqrt(dLat*dLat+dLng*dLng)*R;
+  }
+
+  var toilets={}, notes={}, pos=null, myFloor="", filt={place:"",acc:false,paper:false,quiet:false,m:false,f:false};
+  var editing=null, armed=false;
+  var $=function(id){return document.getElementById(id);};
+  function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+  function ls(k,v){ try{ if(v===undefined){var r=localStorage.getItem(k);return r?JSON.parse(r):null;} localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ return null; } }
+  var toastT; function toast(m){ var t=$("toast"); t.textContent=m; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(function(){t.hidden=true;},3500); }
+  function persist(){ if(!ls("wc.toilets",toilets)||!ls("wc.notes",notes)) toast("這個瀏覽器不讓網頁存資料，關掉頁面後記錄會消失。"); }
+
+  // ---- Map
+  var map=L.map("map",{preferCanvas:true,minZoom:16,maxZoom:20,maxBounds:[[22.2985,114.1730],[22.3105,114.1860]],zoomControl:false}).setView([22.3042,114.1796],17);
+  L.control.zoom({position:"topright"}).addTo(map);  // Surroundings: greyed-out OpenStreetMap. Campus: our own drawing from OpenStreetMap outlines.
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxNativeZoom:19,maxZoom:20,className:"outside",
+    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> 貢獻者'}).addTo(map);
+  // Campus is our own drawing from OpenStreetMap outlines: each block is pushed north by its height so a brick wall shows below the roof.
+  var CP=window.CAMPUS||{boundary:[],wings:{},blds:{},cores:{}};
+  var TALL={M:26,Y:22,V:22,Z:22,W:14,L:12};
+  function up(r,h){ var d=h/111320; return r.map(function(p){return [p[0]+d,p[1]];}); }
+  function heightOf(id){ var p=BY[id]; return p&&p.t==="core"?15:(TALL[id]||11); }
+  CP.boundary.forEach(function(r){ L.polygon(r,{color:"#a9c98a",weight:3,fillColor:"#dfeecd",fillOpacity:1,interactive:false}).addTo(map); });
+  var solids=[];
+  function collect(set,h,wall,roof,edge){ Object.keys(set).forEach(function(k){ set[k].forEach(function(r){
+    solids.push({r:r,h:typeof h==="function"?h(k):h,wall:wall,roof:roof,edge:edge,s:Math.min.apply(null,r.map(function(p){return p[0];}))}); }); }); }
+  collect(CP.wings,8,"#a85a42","#dcd6d0","#b9b0a8");
+  collect(CP.blds,function(k){return TALL[k]||11;},"#a85a42","#ece5dd","#b9b0a8");
+  collect(CP.cores,15,"#8f4632","#c77b5e","#8f4632");
+  solids.sort(function(a,b){return b.s-a.s;}).forEach(function(o){
+    for (var s=0;s<4;s++) L.polygon(up(o.r,o.h*s/4),{stroke:false,fillColor:o.wall,fillOpacity:1,interactive:false}).addTo(map);
+    L.polygon(up(o.r,o.h),{color:o.edge,weight:1,fillColor:o.roof,fillOpacity:1,interactive:false}).addTo(map);
+  });
+  var markers={};
+  PLACES.forEach(function(p){
+    markers[p.id]=L.marker([p.ll[0]+heightOf(p.id)/111320,p.ll[1]],{keyboard:true,title:p.id}).addTo(map).on("click",function(){
+      filt.place=filt.place===p.id?"":p.id; render();
+    });
+  });
+  var meDot=null, meRing=null, followed=false;
+  function onPos(g){
+    pos={ll:[g.coords.latitude,g.coords.longitude],acc:g.coords.accuracy||0};
+    if (!meDot){
+      meRing=L.circle(pos.ll,{radius:pos.acc,color:"#2f7fe0",weight:1,fillOpacity:.15,interactive:false}).addTo(map);
+      meDot=L.marker(pos.ll,{icon:L.divIcon({className:"",html:'<div class="medot"></div>',iconSize:[16,16],iconAnchor:[8,8]}),interactive:false,zIndexOffset:1000}).addTo(map);
+    } else { meDot.setLatLng(pos.ll); meRing.setLatLng(pos.ll); meRing.setRadius(pos.acc); }
+    var onCampus=map.options.maxBounds&&L.latLngBounds(map.options.maxBounds).contains(pos.ll);
+    $("geo").textContent=!onCampus?"你不在校園範圍內":(pos.acc>40?"定位誤差約 "+Math.round(pos.acc/10)*10+" 米，室內會較不準":"已定位，誤差約 "+Math.max(5,Math.round(pos.acc/5)*5)+" 米");
+    if (!followed&&onCampus){ followed=true; map.setView(pos.ll,18); }
+    render();
+  }
+  function onGeoErr(e){
+    $("geo").textContent=e.code===1?"你沒有允許定位，清單不會按距離排序":"暫時取不到位置";
+  }
+  function startGeo(){
+    if (!navigator.geolocation){ $("geo").textContent="這個瀏覽器不支援定位"; return; }
+    navigator.geolocation.watchPosition(onPos,onGeoErr,{enableHighAccuracy:true,maximumAge:5000,timeout:20000});
+  }
+  $("locate").onclick=function(){ if(pos) map.setView(pos.ll,Math.max(map.getZoom(),18)); else { $("geo").textContent="正在取得位置…"; startGeo(); } };
+
+  // ---- Rendering
+  function all(){ return Object.keys(toilets).map(function(id){return toilets[id];}); }
+  function score(t){
+    var d=pos&&BY[t.place]?metres(pos.ll,BY[t.place].ll):0;
+    return d+(myFloor?floorGap(myFloor,t.floor)*15:0);
+  }
+  function distLabel(t){
+    var parts=[];
+    if (pos&&BY[t.place]) parts.push("約 "+Math.max(10,Math.round(metres(pos.ll,BY[t.place].ll)/10)*10)+" 米");
+    if (myFloor){ var g=floorGap(myFloor,t.floor); parts.push(g===0?"同層":"差 "+g+" 層"); }
+    return parts.join(" · ");
+  }
+  function visible(){
+    return all().filter(function(t){
+      if (filt.place && t.place!==filt.place) return false;
+      if (filt.acc && !t.accessible) return false;
+      if (filt.paper && t.paper!=="yes") return false;
+      if (filt.quiet && t.crowd!=="low") return false;
+      if (filt.m && t.gender==="f") return false;
+      if (filt.f && t.gender==="m") return false;
+      return true;
+    }).sort(function(a,b){
+      var d=score(a)-score(b); if (Math.abs(d)>=1) return d;
+      return ORDER.indexOf(a.place)-ORDER.indexOf(b.place) || FLOORS.indexOf(a.floor)-FLOORS.indexOf(b.floor);
+    });
+  }
+  var CHIPS=[["acc","無障礙"],["paper","有廁紙"],["quiet","人少"],["m","男可用"],["f","女可用"]];
+  var GENDER={both:"男 / 女",m:"男",f:"女",all:"性別友善"};
+  function render(){
+    var has={}; all().forEach(function(t){ if(!myFloor||t.floor===myFloor) has[t.place]=1; });
+    PLACES.forEach(function(p){
+      var cls="mk "+p.t+(has[p.id]?" has":"")+(filt.place===p.id?" sel":"");
+      markers[p.id].setIcon(L.divIcon({className:"",html:'<div class="'+cls+'">'+p.id+'</div>',iconSize:[26,26],iconAnchor:[13,13]}));
+    });
+    $("chips").innerHTML=(filt.place?'<button type="button" class="chip place" data-clear="1">只看 '+esc(filt.place)+' ✕</button>':'')+
+      CHIPS.map(function(c){return '<button type="button" class="chip" data-chip="'+c[0]+'" aria-pressed="'+filt[c[0]]+'">'+c[1]+'</button>';}).join("");
+    var total=all().length, rows=visible(), list=$("list");
+    if (!total){
+      list.innerHTML='<li class="empty"><strong>還沒有任何廁所</strong>經過一間時按「＋ 新增」，位置會按你身處的地方自動選好。</li>';
+    } else if (!rows.length){
+      list.innerHTML='<li class="empty"><strong>'+(filt.place?esc(filt.place)+" 還沒有記錄":"沒有符合的廁所")+'</strong>'+(filt.place?'按「＋ 新增」在這裡加一筆。':'試試取消一些篩選。')+'</li>';
+    } else {
+      list.innerHTML=rows.map(function(t){
+        var n=notes[t.id]||{}, d=distLabel(t), tags=['<span class="tag">'+GENDER[t.gender||"both"]+'</span>'];
+        if (t.accessible) tags.push('<span class="tag ok">無障礙</span>');
+        if (t.paper==="yes") tags.push('<span class="tag ok">有廁紙</span>');
+        if (t.paper==="sometimes") tags.push('<span class="tag warn">廁紙不一定</span>');
+        if (t.paper==="no") tags.push('<span class="tag warn">沒廁紙</span>');
+        if (t.crowd==="low") tags.push('<span class="tag ok">人少</span>');
+        if (t.crowd==="high") tags.push('<span class="tag warn">人多</span>');
+        return '<li class="card"><div class="loc">'+esc(t.place)+' '+esc(t.floor)+'/F'+(d?'<small>'+d+'</small>':'')+'</div>'+
+          '<div class="body">'+(t.where?'<div class="where">'+esc(t.where)+'</div>':'')+'<div class="tags">'+tags.join("")+'</div>'+
+          (n.rating?'<div class="stars" aria-label="評分 '+n.rating+' 星">'+"★".repeat(n.rating)+'</div>':'')+
+          (n.note?'<div class="note">'+esc(n.note)+'</div>':'')+'</div>'+
+          '<button type="button" class="edit" data-edit="'+esc(t.id)+'">編輯</button></li>';
+      }).join("");
+    }
+    $("count").textContent="共 "+total+" 筆，存在這部裝置";
+  }
+
+  // ---- Form
+  function nearestPlace(){
+    if (!pos) return ORDER[0];
+    var best=ORDER[0], bd=Infinity;
+    PLACES.forEach(function(p){ var d=metres(pos.ll,p.ll); if(d<bd){bd=d;best=p.id;} });
+    return best;
+  }
+  function openForm(id,preset){
+    editing=id||null; armed=false;
+    var t=id?toilets[id]:(preset||{place:filt.place||nearestPlace(),floor:myFloor||"G",gender:"both",paper:"unknown",crowd:"unknown"}), n=(id&&notes[id])||{};
+    $("formTitle").textContent=id?"編輯 "+t.place+" "+t.floor+"/F":"新增廁所";
+    $("fPlace").value=t.place; $("fFloor").value=t.floor; $("fWhere").value=t.where||"";
+    $("fGender").value=t.gender||"both"; $("fPaper").value=t.paper||"unknown"; $("fCrowd").value=t.crowd||"unknown";
+    $("fAccessible").checked=!!t.accessible; $("fRating").value=String(n.rating||0); $("fNote").value=n.note||"";
+    $("againWrap").hidden=!!id; if (id) $("fAgain").checked=false;
+    $("delBtn").hidden=!id; $("delBtn").textContent="刪除";
+    if (!$("dlg").open) $("dlg").showModal();
+  }
+  function save(){
+    var id=editing||"t"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    var fact={id:id,place:$("fPlace").value,floor:$("fFloor").value,where:$("fWhere").value.trim(),gender:$("fGender").value,
+      paper:$("fPaper").value,crowd:$("fCrowd").value,accessible:$("fAccessible").checked,updatedAt:new Date().toISOString()};
+    var note={rating:Number($("fRating").value)||0,note:$("fNote").value.trim()};
+    toilets[id]=fact; if (note.rating||note.note) notes[id]=note; else delete notes[id];
+    persist(); render();
+    return fact;
+  }
+  $("form").addEventListener("submit",function(e){
+    e.preventDefault();
+    var wasNew=!editing, fact=save();
+    if (wasNew && $("fAgain").checked){
+      var next=FLOORS[Math.min(FLOORS.length-1,FLOORS.indexOf(fact.floor)+1)];
+      openForm(null,{place:fact.place,floor:next,gender:fact.gender,paper:"unknown",crowd:"unknown",accessible:fact.accessible});
+      toast("已儲存 "+fact.place+" "+fact.floor+"/F，繼續加下一層。");
+    } else { $("dlg").close(); }
+  });
+  $("delBtn").onclick=function(){
+    if (!armed){ armed=true; $("delBtn").textContent="再按一次確認刪除"; return; }
+    delete toilets[editing]; delete notes[editing]; persist(); render(); $("dlg").close();
+  };
+  $("addBtn").onclick=function(){openForm(null);};
+  $("cancelBtn").onclick=function(){$("dlg").close();};
+  $("chips").addEventListener("click",function(e){
+    if (e.target.closest("[data-clear]")){ filt.place=""; render(); return; }
+    var c=e.target.closest("[data-chip]"); if(!c) return;
+    filt[c.dataset.chip]=!filt[c.dataset.chip]; render();
+  });
+  $("list").addEventListener("click",function(e){ var b=e.target.closest("[data-edit]"); if(b) openForm(b.dataset.edit); });
+  $("floor").onchange=function(){ myFloor=$("floor").value; ls("wc.floor",myFloor); render(); };
+
+  // ---- Backup
+  $("exportBtn").onclick=function(){
+    var blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),toilets:toilets,notes:notes},null,2)],{type:"application/json"});
+    var a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="polyu-toilets-"+new Date().toISOString().slice(0,10)+".json";
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+  };
+  $("importBtn").onclick=function(){ $("importFile").click(); };
+  $("importFile").onchange=function(){
+    var f=this.files[0]; if(!f) return; var rd=new FileReader();
+    rd.onload=function(){
+      try{
+        var d=JSON.parse(rd.result), n=0; if(!d||typeof d.toilets!=="object") throw 0;
+        Object.keys(d.toilets).forEach(function(id){ var t=d.toilets[id]; if(t&&BY[t.place]&&FLOORS.indexOf(t.floor)>=0){ t.id=id; toilets[id]=t; n++; } });
+        Object.keys(d.notes||{}).forEach(function(id){ if(toilets[id]) notes[id]=d.notes[id]; });
+        persist(); render(); toast("已匯入 "+n+" 筆，相同的記錄已更新。");
+      }catch(e){ toast("這個檔案不是廁所圖的備份。"); }
+    };
+    rd.readAsText(f); this.value="";
+  };
+
+  // ---- Boot
+  function opts(sel,list,label,first){ sel.innerHTML=(first?'<option value="">'+first+'</option>':'')+list.map(function(v){return '<option value="'+v+'">'+label(v)+'</option>';}).join(""); }
+  opts($("floor"),FLOORS,function(v){return "我在 "+v+"/F";},"我在幾樓？");
+  opts($("fFloor"),FLOORS,function(v){return v+"/F";});
+  opts($("fPlace"),ORDER,function(v){return v+(BY[v].t==="core"?" 圓柱":" 座");});
+  toilets=ls("wc.toilets")||{}; notes=ls("wc.notes")||{};
+  var sf=ls("wc.floor"); if (sf&&FLOORS.indexOf(sf)>=0){ myFloor=sf; $("floor").value=sf; }
+  render(); startGeo();
+})();
+</script>
+</body>
+</html>
