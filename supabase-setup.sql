@@ -45,6 +45,7 @@ create table public.comments (
   toilet_id  text not null references public.toilets(id) on delete cascade,
   name       text not null check (char_length(btrim(name)) between 1 and 20),
   body       text not null check (char_length(btrim(body)) between 1 and 300),
+  avatar     text check (avatar is null or char_length(avatar) <= 8),
   created_at timestamptz not null default now()
 );
 create index comments_toilet on public.comments (toilet_id, created_at desc);
