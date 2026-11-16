@@ -26,7 +26,7 @@ button,select,input,textarea{font:inherit;color:inherit}
 header{display:flex;align-items:center;gap:8px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top,0px));
   background:var(--surface);border-bottom:1px solid var(--line)}
 h1{font-size:1.1rem;margin:0;flex:1;white-space:nowrap}
-select,input[type=text],textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+select,input[type=text],input[type=email],input[type=password],textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
 .btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 14px;cursor:pointer}
 .btn.primary{background:var(--brick);color:var(--on-brick);border-color:var(--brick);font-weight:600}
 .btn.danger{color:var(--brick);border-color:var(--brick)}
@@ -65,6 +65,17 @@ select,input[type=text],textarea{background:var(--surface);border:1px solid var(
 .tag.warn{color:var(--warn);border-color:var(--warn)}
 .stars{color:var(--brick);letter-spacing:.1em;font-size:.9rem}
 .edit{border:0;background:none;color:var(--brick);cursor:pointer;padding:4px;font-size:.85rem}
+.side{display:flex;flex-direction:column;align-items:flex-end}
+#adminBox{border:1px solid var(--brick);border-radius:8px;padding:10px 12px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
+#adminBox h2{margin:0;font-size:.95rem}
+.pend{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;border-top:1px solid var(--line);padding-top:8px;font-size:.88rem}
+.pend .what{flex:1 1 180px;min-width:0;overflow-wrap:anywhere}
+.pend button{font-size:.8rem;padding:4px 10px}
+.clist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:40vh;overflow-y:auto}
+.clist li{overflow-wrap:anywhere}
+.clist .who{font-weight:600;font-size:.88rem}
+.clist time{font-size:.72rem;color:var(--muted);margin-left:6px}
+.clist .edit{float:right}
 .empty{border:1px dashed var(--line);border-radius:8px;padding:18px 14px;text-align:center;color:var(--muted)}
 .empty strong{display:block;color:var(--fg);margin-bottom:4px}
 .foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.75rem;color:var(--muted)}
@@ -102,6 +113,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
 </div>
 
 <div class="panel">
+  <div id="adminBox" hidden></div>
   <div class="chips" id="chips"></div>
   <ul class="list" id="list"></ul>
   <div class="foot">
@@ -109,6 +121,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
     <button class="btn" id="exportBtn" type="button">匯出備份</button>
     <button class="btn" id="importBtn" type="button">匯入備份</button>
     <button class="btn" id="shareBtn" type="button">匯出給同學</button>
+    <button class="btn" id="adminBtn" type="button" hidden>管理員</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
   </div>
 </div>
@@ -150,9 +163,35 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
     </div>
   </form>
 </dialog>
+
+<dialog id="cdlg">
+  <form id="cForm">
+    <h2 id="cTitle">評論</h2>
+    <ul class="clist" id="cList"></ul>
+    <label class="field">暱稱<input type="text" id="cName" maxlength="20" required placeholder="大家會看到這個名字"></label>
+    <label class="field">評論<textarea id="cBody" rows="2" maxlength="300" required placeholder="所有人都看得到，請不要寫個人資料"></textarea></label>
+    <div class="actions">
+      <button class="btn" id="cClose" type="button">關閉</button>
+      <button class="btn primary" type="submit">送出</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="ldlg">
+  <form id="lForm">
+    <h2>管理員登入</h2>
+    <label class="field">電郵<input type="email" id="lEmail" required autocomplete="username"></label>
+    <label class="field">密碼<input type="password" id="lPass" required autocomplete="current-password"></label>
+    <div class="actions">
+      <button class="btn" id="lClose" type="button">取消</button>
+      <button class="btn primary" type="submit">登入</button>
+    </div>
+  </form>
+</dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="config.js"></script>
 <script src="campus.js"></script>
 <script>
 (function(){
@@ -185,6 +224,61 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   function ls(k,v){ try{ if(v===undefined){var r=localStorage.getItem(k);return r?JSON.parse(r):null;} localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ return null; } }
   var toastT; function toast(m){ var t=$("toast"); t.textContent=m; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(function(){t.hidden=true;},3500); }
   function persist(){ if(!ls("wc.toilets",toilets)||!ls("wc.notes",notes)) toast("這個瀏覽器不讓網頁存資料，關掉頁面後記錄會消失。"); }
+
+  // ---- Cloud (Supabase). Without a config the site keeps everything on the device.
+  // In cloud mode "shared" holds the approved records everyone sees and "toilets" holds this device's records that are not public yet.
+  var SB=window.WC_CONFIG||{}, cloud=!!(SB.url&&SB.key), auth=null, admin=false, pending=[], ccount={}, status={}, statusKnown=false;
+  function secretKey(k){
+    if (/^sb_secret_/.test(k)) return true;
+    try{ return /service_role/.test(atob(k.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))); }catch(e){ return false; }
+  }
+  if (cloud&&secretKey(SB.key)){ cloud=false; setTimeout(function(){ toast("設定裡放了不能公開的金鑰，雲端功能已停用。"); },0); }
+  function setAuth(d){
+    auth=d?{access:d.access_token,refresh:d.refresh_token,exp:Date.now()+(d.expires_in||3600)*1000}:null;
+    ls("wc.auth",auth); if (!auth) admin=false;
+  }
+  function tokenReq(grant,body){
+    return fetch(SB.url+"/auth/v1/token?grant_type="+grant,{method:"POST",headers:{apikey:SB.key,"Content-Type":"application/json"},body:JSON.stringify(body)})
+      .then(function(r){ return r.ok?r.json():null; });
+  }
+  function fresh(){
+    if (!auth||auth.exp-Date.now()>60000) return Promise.resolve();
+    return tokenReq("refresh_token",{refresh_token:auth.refresh}).then(function(d){ setAuth(d&&d.access_token?d:null); },function(){});
+  }
+  function api(path,o){
+    o=o||{};
+    return fresh().then(function(){
+      var h={apikey:SB.key,"Content-Type":"application/json"};
+      if (auth) h.Authorization="Bearer "+auth.access; else if (/^eyJ/.test(SB.key)) h.Authorization="Bearer "+SB.key;
+      if (o.prefer) h.Prefer=o.prefer;
+      return fetch(SB.url+"/rest/v1/"+path,{method:o.method||"GET",headers:h,body:o.body?JSON.stringify(o.body):undefined});
+    }).then(function(r){
+      return r.text().then(function(t){ if(!r.ok) throw new Error(t||String(r.status)); return t?JSON.parse(t):null; });
+    });
+  }
+  function byId(id){ return "toilets?id=eq."+encodeURIComponent(id); }
+  function newId(){ return "t"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+  function fromRow(r){ return {id:r.id,place:r.place,floor:r.floor,where:r.descr||"",gender:r.gender,paper:r.paper,crowd:r.crowd,accessible:!!r.accessible,updatedAt:r.updated_at}; }
+  function toRow(t,st,target){
+    return {id:t.id,place:t.place,floor:t.floor,descr:t.where||"",gender:t.gender||"both",paper:t.paper||"unknown",crowd:t.crowd||"unknown",
+      accessible:!!t.accessible,status:st,target:target||null};
+  }
+  function upsert(rows){ return api("toilets?on_conflict=id",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:rows}); }
+  function unpublished(){ return Object.keys(toilets).filter(function(id){ return status[id]!=="pending"; }); }
+  function loadCloud(){
+    return api("toilets?status=eq.approved&select=*").then(function(rows){
+      shared={}; rows.forEach(function(r){ if(BY[r.place]&&FLOORS.indexOf(r.floor)>=0) shared[r.id]=fromRow(r); });
+      var drop=Object.keys(toilets).filter(function(id){ return shared[id]; });
+      drop.forEach(function(id){ delete toilets[id]; }); if (drop.length) persist();
+      render();
+      var mine=Object.keys(toilets);
+      return Promise.all([
+        api("comments?select=toilet_id").then(function(cs){ ccount={}; cs.forEach(function(c){ ccount[c.toilet_id]=(ccount[c.toilet_id]||0)+1; }); }),
+        mine.length?api("rpc/my_status",{method:"POST",body:{ids:mine}}).then(function(st){ status={}; st.forEach(function(s){ status[s.id]=s.status; }); statusKnown=true; }):(statusKnown=true),
+        admin?api("toilets?status=eq.pending&select=*&order=created_at").then(function(p){ pending=p; }):(pending=[])
+      ]);
+    }).then(render,function(){ render(); toast("連不上雲端資料庫，暫時只看到這部裝置的記錄。"); });
+  }
 
   // ---- Map
   var map=L.map("map",{preferCanvas:true,minZoom:16,maxZoom:20,maxBounds:[[22.2985,114.1730],[22.3105,114.1860]],zoomControl:false}).setView([22.3042,114.1796],17);
@@ -236,7 +330,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
 
   // ---- Rendering
   // Shared records come from data.json in the site; this device's own records win when both have the same id.
-  function rec(id){ return toilets[id]||shared[id]; }
+  function rec(id){ return cloud?(shared[id]||toilets[id]):(toilets[id]||shared[id]); }
   function all(){
     var ids={}; Object.keys(shared).forEach(function(id){ids[id]=1;}); Object.keys(toilets).forEach(function(id){ids[id]=1;});
     return Object.keys(ids).map(rec);
@@ -289,16 +383,59 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
         if (t.paper==="no") tags.push('<span class="tag warn">沒廁紙</span>');
         if (t.crowd==="low") tags.push('<span class="tag ok">人少</span>');
         if (t.crowd==="high") tags.push('<span class="tag warn">人多</span>');
+        var pub=cloud&&shared[t.id], cn=ccount[t.id]||0;
+        if (cloud&&!pub&&(status[t.id]==="pending"||statusKnown)) tags.push('<span class="tag warn">'+(status[t.id]==="pending"?"等待審批":"只在這部裝置")+'</span>');
         return '<li class="card"><div class="loc">'+esc(t.place)+' '+esc(t.floor)+'/F'+(d?'<small>'+d+'</small>':'')+'</div>'+
           '<div class="body">'+(t.where?'<div class="where">'+esc(t.where)+'</div>':'')+'<div class="tags">'+tags.join("")+'</div>'+
           (n.rating?'<div class="stars" aria-label="評分 '+n.rating+' 星">'+"★".repeat(n.rating)+'</div>':'')+
           (n.note?'<div class="note">'+esc(n.note)+'</div>':'')+'</div>'+
-          '<button type="button" class="edit" data-edit="'+esc(t.id)+'">編輯</button></li>';
+          '<div class="side"><button type="button" class="edit" data-edit="'+esc(t.id)+'">編輯</button>'+
+          (pub?'<button type="button" class="edit" data-c="'+esc(t.id)+'">評論'+(cn?"（"+cn+"）":"")+'</button>':'')+'</div></li>';
       }).join("");
     }
     var mine=Object.keys(toilets).length;
-    $("count").textContent="共 "+total+" 筆"+(mine?"，其中 "+mine+" 筆存在這部裝置":"");
+    $("count").textContent="共 "+total+" 筆"+(mine?"，其中 "+mine+(cloud?" 筆還沒公開":" 筆存在這部裝置"):"");
+    renderAdmin();
   }
+  var PAPER={yes:"通常有",sometimes:"不一定",no:"通常沒有"}, CROWD={low:"少",mid:"普通",high:"多"};
+  function brief(r){
+    var b=[GENDER[r.gender]||""]; if (r.accessible) b.push("無障礙");
+    if (PAPER[r.paper]) b.push("廁紙"+PAPER[r.paper]); if (CROWD[r.crowd]) b.push("人流"+CROWD[r.crowd]);
+    return b.join(" · ");
+  }
+  function renderAdmin(){
+    var box=$("adminBox"); box.hidden=!admin; $("adminBtn").textContent=admin?"登出管理員":"管理員";
+    if (!admin) return;
+    var local=unpublished().length;
+    box.innerHTML='<h2>待審批（'+pending.length+'）</h2>'+(pending.length?'':'<div class="note">沒有等待審批的記錄。</div>')+
+      pending.map(function(r){
+        var tg=r.target&&shared[r.target];
+        return '<div class="pend"><div class="what"><b>'+(r.target?"修改 ":"新增 ")+esc(r.place)+' '+esc(r.floor)+'/F</b>'+
+          (tg&&(tg.place!==r.place||tg.floor!==r.floor)?'（原本是 '+esc(tg.place)+' '+esc(tg.floor)+'/F）':'')+
+          (r.descr?'<br>'+esc(r.descr):'')+'<br><span class="note">'+esc(brief(r))+'</span></div>'+
+          '<button type="button" class="btn primary" data-ok="'+esc(r.id)+'">通過</button>'+
+          '<button type="button" class="btn danger" data-no="'+esc(r.id)+'">拒絕</button></div>';
+      }).join("")+
+      (local?'<div class="pend"><div class="what">這部裝置有 '+local+' 筆記錄還沒公開。</div><button type="button" class="btn" data-up="1">全部公開</button></div>':'');
+  }
+  function approve(r){
+    if (!r) return Promise.resolve();
+    var own=function(){ return api(byId(r.id),{method:"PATCH",body:{status:"approved",target:null}}); };
+    if (!r.target) return own();
+    var f={place:r.place,floor:r.floor,descr:r.descr,gender:r.gender,paper:r.paper,crowd:r.crowd,accessible:r.accessible,updated_at:new Date().toISOString()};
+    // If the record it wanted to change is gone, publish the proposal as a record of its own.
+    return api(byId(r.target),{method:"PATCH",prefer:"return=representation",body:f}).then(function(hit){
+      return hit&&hit.length?api(byId(r.id),{method:"DELETE"}):own();
+    });
+  }
+  $("adminBox").addEventListener("click",function(e){
+    var ok=e.target.closest("[data-ok]"), no=e.target.closest("[data-no]"), p;
+    if (e.target.closest("[data-up]")) p=upsert(unpublished().map(function(id){ return toRow(toilets[id],"approved"); }));
+    else if (ok) p=approve(pending.filter(function(r){ return r.id===ok.dataset.ok; })[0]);
+    else if (no){ if (!confirm("拒絕並刪除這筆？")) return; p=api(byId(no.dataset.no),{method:"DELETE"}); }
+    else return;
+    p.then(loadCloud,function(){ toast("沒有成功，請再試一次。"); });
+  });
 
   // ---- Form
   function nearestPlace(){
@@ -315,15 +452,31 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
     $("fGender").value=t.gender||"both"; $("fPaper").value=t.paper||"unknown"; $("fCrowd").value=t.crowd||"unknown";
     $("fAccessible").checked=!!t.accessible; $("fRating").value=String(n.rating||0); $("fNote").value=n.note||"";
     $("againWrap").hidden=!!id; if (id) $("fAgain").checked=false;
-    $("delBtn").hidden=!id||!toilets[id]; $("delBtn").textContent="刪除";
+    $("delBtn").hidden=!id||!(toilets[id]||(admin&&shared[id])); $("delBtn").textContent="刪除";
     if (!$("dlg").open) $("dlg").showModal();
   }
   function save(){
-    var id=editing||"t"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    var id=editing||newId();
     var fact={id:id,place:$("fPlace").value,floor:$("fFloor").value,where:$("fWhere").value.trim(),gender:$("fGender").value,
       paper:$("fPaper").value,crowd:$("fCrowd").value,accessible:$("fAccessible").checked,updatedAt:new Date().toISOString()};
     var note={rating:Number($("fRating").value)||0,note:$("fNote").value.trim()};
-    toilets[id]=fact; if (note.rating||note.note) notes[id]=note; else delete notes[id];
+    if (note.rating||note.note) notes[id]=note; else delete notes[id];
+    var failed=function(){ toast("連不上雲端資料庫，這次修改沒有送出。"); };
+    if (!cloud){ toilets[id]=fact; }
+    else if (admin){
+      // The admin's own changes are public at once.
+      shared[id]=fact; delete toilets[id];
+      upsert([toRow(fact,"approved")]).catch(failed);
+    } else if (shared[id]){
+      // A change to a public record is sent as a proposal and shows only after approval.
+      var p=toRow(fact,"pending",id); p.id=newId();
+      api("toilets",{method:"POST",prefer:"return=minimal",body:p}).then(function(){ toast("已送出修改，通過審批後大家才會看到。"); },failed);
+    } else {
+      toilets[id]=fact;
+      var row=status[id]==="pending"?toRow(fact,"pending",id):toRow(fact,"pending");
+      if (row.target) row.id=newId();
+      api("toilets",{method:"POST",prefer:"return=minimal",body:row}).then(function(){ status[id]="pending"; render(); toast("已送出，等待審批。在這之前只有你看得到。"); },failed);
+    }
     persist(); render();
     return fact;
   }
@@ -338,7 +491,66 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   });
   $("delBtn").onclick=function(){
     if (!armed){ armed=true; $("delBtn").textContent="再按一次確認刪除"; return; }
+    if (cloud&&admin&&shared[editing]){ delete shared[editing]; api(byId(editing),{method:"DELETE"}).catch(function(){ toast("雲端那邊沒有刪掉，請重新整理再試。"); }); }
     delete toilets[editing]; delete notes[editing]; persist(); render(); $("dlg").close();
+  };
+
+  // ---- Comments (cloud only)
+  var cFor=null;
+  function openComments(id){
+    var t=rec(id); if (!t) return;
+    cFor=id; $("cTitle").textContent=t.place+" "+t.floor+"/F 的評論"; $("cName").value=ls("wc.name")||""; $("cBody").value="";
+    $("cList").innerHTML='<li class="note">載入中…</li>';
+    if (!$("cdlg").open) $("cdlg").showModal();
+    loadComments();
+  }
+  function loadComments(){
+    var id=cFor;
+    api("comments?toilet_id=eq."+encodeURIComponent(id)+"&select=id,name,body,created_at&order=created_at.desc&limit=200").then(function(cs){
+      if (cFor!==id) return;
+      ccount[id]=cs.length;
+      $("cList").innerHTML=cs.length?cs.map(function(c){
+        var when=new Date(c.created_at).toLocaleString("zh-HK",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+        return '<li>'+(admin?'<button type="button" class="edit" data-cdel="'+esc(c.id)+'">刪除</button>':'')+
+          '<span class="who">'+esc(c.name)+'</span><time>'+esc(when)+'</time><div>'+esc(c.body)+'</div></li>';
+      }).join(""):'<li class="note">還沒有評論，來寫第一則。</li>';
+      render();
+    },function(){ $("cList").innerHTML='<li class="note">載入不到評論。</li>'; });
+  }
+  $("cForm").addEventListener("submit",function(e){
+    e.preventDefault();
+    var name=$("cName").value.trim(), body=$("cBody").value.trim(), wait=60-Math.floor((Date.now()-(ls("wc.lastc")||0))/1000);
+    if (!name||!body) return;
+    if (wait>0&&!admin){ toast("請等 "+wait+" 秒再留言。"); return; }
+    ls("wc.name",name);
+    api("comments",{method:"POST",prefer:"return=minimal",body:{toilet_id:cFor,name:name,body:body}}).then(function(){
+      ls("wc.lastc",Date.now()); $("cBody").value=""; loadComments();
+    },function(){ toast("留言沒有送出，請稍後再試。"); });
+  });
+  $("cList").addEventListener("click",function(e){
+    var b=e.target.closest("[data-cdel]"); if (!b||!confirm("刪除這則評論？")) return;
+    api("comments?id=eq."+encodeURIComponent(b.dataset.cdel),{method:"DELETE"}).then(loadComments,function(){ toast("刪除不成功。"); });
+  });
+  $("cClose").onclick=function(){ $("cdlg").close(); };
+
+  // ---- Admin sign-in (cloud only)
+  $("lForm").addEventListener("submit",function(e){
+    e.preventDefault();
+    tokenReq("password",{email:$("lEmail").value.trim(),password:$("lPass").value}).then(function(d){
+      $("lPass").value="";
+      if (!d||!d.access_token){ toast("登入不成功，請檢查電郵和密碼。"); return; }
+      setAuth(d);
+      return api("rpc/is_admin",{method:"POST",body:{}}).then(function(a){
+        if (a!==true){ setAuth(null); toast("這個帳號不是管理員。"); return; }
+        admin=true; $("ldlg").close(); return loadCloud();
+      });
+    }).catch(function(){ toast("連不上伺服器。"); });
+  });
+  $("lClose").onclick=function(){ $("ldlg").close(); };
+  $("adminBtn").onclick=function(){
+    if (!admin){ $("ldlg").showModal(); return; }
+    fetch(SB.url+"/auth/v1/logout",{method:"POST",headers:{apikey:SB.key,Authorization:"Bearer "+auth.access}}).catch(function(){});
+    setAuth(null); pending=[]; loadCloud();
   };
   $("addBtn").onclick=function(){openForm(null);};
   $("cancelBtn").onclick=function(){$("dlg").close();};
@@ -347,7 +559,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
     var c=e.target.closest("[data-chip]"); if(!c) return;
     filt[c.dataset.chip]=!filt[c.dataset.chip]; render();
   });
-  $("list").addEventListener("click",function(e){ var b=e.target.closest("[data-edit]"); if(b) openForm(b.dataset.edit); });
+  $("list").addEventListener("click",function(e){ var b=e.target.closest("[data-edit]"), c=e.target.closest("[data-c]"); if(b) openForm(b.dataset.edit); else if(c) openComments(c.dataset.c); });
   $("floor").onchange=function(){ myFloor=$("floor").value; ls("wc.floor",myFloor); render(); };
 
   // ---- Backup
@@ -387,7 +599,10 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
   toilets=ls("wc.toilets")||{}; notes=ls("wc.notes")||{};
   var sf=ls("wc.floor"); if (sf&&FLOORS.indexOf(sf)>=0){ myFloor=sf; $("floor").value=sf; }
   render(); startGeo();
-  fetch("data.json",{cache:"no-store"}).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+  if (cloud){
+    auth=ls("wc.auth"); $("shareBtn").hidden=true; $("adminBtn").hidden=false;
+    (auth?api("rpc/is_admin",{method:"POST",body:{}}).then(function(a){ admin=a===true; },function(){}):Promise.resolve()).then(loadCloud);
+  } else fetch("data.json",{cache:"no-store"}).then(function(r){ return r.ok?r.json():null; }).then(function(d){
     if (!d||typeof d.toilets!=="object") return;
     Object.keys(d.toilets).forEach(function(id){ var t=d.toilets[id]; if(t&&BY[t.place]&&FLOORS.indexOf(t.floor)>=0){ t.id=id; shared[id]=t; } });
     render();
